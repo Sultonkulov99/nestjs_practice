@@ -1,8 +1,8 @@
 import { HttpException, HttpStatus, Injectable, UnauthorizedException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { User, UserDocument } from './auth.schema/schema';
+import { User, UserDocument } from './schema/auth.schema';
 import { Model } from 'mongoose';
-import { LoginDto, RefreshTokenDto, RegisterDto } from './auth.dto/dto';
+import { LoginDto, RefreshTokenDto, RegisterDto } from './dto/auth.dto';
 import * as bcrypt from 'bcrypt';
 import { JwtService } from '@nestjs/jwt';
 
@@ -14,9 +14,9 @@ export class AuthService {
         private jwtService : JwtService
     ){}
 
-    private async generateTokens(username){
+    private async generateTokens(user){
         return {
-            access_token : await this.jwtService.signAsync({username: username})
+            access_token : await this.jwtService.sign(user)
         }
     }
 
@@ -37,18 +37,27 @@ export class AuthService {
         })
 
         create.save()
-        return this.generateTokens(create.username)
+        
+        return this.generateTokens({username : create.username, role : create.role})
     }
 
     async login(payload : LoginDto) {
-        let exitUser = await this.userModel.find({username: payload.username, password : payload.password}).exec()
-        console.log(exitUser);
         
-        if(exitUser.length === 0){
+        let exitUser = await this.userModel.findOne({username: payload.username}).exec()
+        
+        if(!exitUser){
             throw new UnauthorizedException()
         }
 
-        return this.generateTokens(payload.username)
+        const isPasswordValid = await bcrypt.compare(payload.password, exitUser.password);
+
+        if (!isPasswordValid) {
+            throw new HttpException("Invalid credentials", HttpStatus.UNAUTHORIZED);
+        }
+
+        console.log(exitUser.role)
+
+        return this.generateTokens({username : exitUser.username, role: exitUser.role})
     }
 
     async refreshToken(payload : RefreshTokenDto) {
